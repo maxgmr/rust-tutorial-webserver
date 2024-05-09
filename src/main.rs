@@ -6,6 +6,8 @@ use std::{
     time::Duration,
 };
 
+use rust_tutorial_webserver::ThreadPool;
+
 const STATUS_LINE_200: &str = "HTTP/1.1 200 OK";
 const STATUS_LINE_404: &str = "HTTP/1.1 404 NOT FOUND";
 
@@ -15,7 +17,7 @@ const PAGE_404: &str = "404.html";
 const REQUEST_LINE_MAIN: &str = "GET / HTTP/1.1";
 const REQUEST_LINE_SLEEP: &str = "GET /sleep HTTP/1.1";
 
-const THREAD_POOL_SIZE: u8 = 4;
+const THREAD_POOL_SIZE: usize = 4;
 
 fn main() {
     // Listen at local address '127.0.0.1:7878' for incoming
@@ -23,6 +25,14 @@ fn main() {
 
     // Bind to ports. unwrap() stops program if errors happen.
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+
+    // Thread pool: Group of spawned threads that are waiting
+    // and ready to handle a task.
+
+    // Must limit pool size to avoid DoS attacks
+
+    // Create a new thread pool with THREAD_POOL_SIZE threads
+    let t_pool = ThreadPool::new(THREAD_POOL_SIZE);
 
     // incoming() returns iterator that gives sequence of
     // streams.
@@ -33,8 +43,9 @@ fn main() {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
 
-        // Pass stream to handle_connection
-        handle_connection(stream);
+        // pool.execute takes a closure and gives it to a thread
+        // in the pool to run
+        t_pool.execute(|| handle_connection(stream));
     }
 }
 
