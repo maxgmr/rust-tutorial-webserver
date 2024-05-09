@@ -4,8 +4,10 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
-const STATUS_LINE: &'static str = "HTTP/1.1 200 OK";
+const STATUS_LINE_200: &'static str = "HTTP/1.1 200 OK";
+const STATUS_LINE_404: &'static str = "HTTP/1.1 404 NOT FOUND";
 const MAIN_PAGE: &'static str = "welcome.html";
+const PAGE_404: &'static str = "404.html";
 
 fn main() {
     // Listen at local address '127.0.0.1:7878' for incoming
@@ -40,18 +42,19 @@ fn handle_connection(mut stream: TcpStream) {
     // Second unwrap handles Result, stops if invalid request
     let request_line = buf_reader.lines().next().unwrap().unwrap();
 
-    if request_line == "GET / HTTP/1.1" {
-        let status_line = STATUS_LINE;
-        let contents = fs::read_to_string(MAIN_PAGE).unwrap();
-        let length = contents.len();
-
-        let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-
-        // write_all() takes &[u8] & sends those bytes directly down
-        // the connection
-        // write_all() can fail, so using unwrap() for simplicity.
-        stream.write_all(response.as_bytes()).unwrap();
+    let (status_line, filename) = if request_line == "GET / HTTP/1.1" {
+        (STATUS_LINE_200, MAIN_PAGE)
     } else {
-        // some other request
-    }
+        (STATUS_LINE_404, PAGE_404)
+    };
+
+    let contents = fs::read_to_string(filename).unwrap();
+    let length = contents.len();
+
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    // write_all() takes &[u8] & sends those bytes directly down
+    // the connection
+    // write_all() can fail, so using unwrap() for simplicity.
+    stream.write_all(response.as_bytes()).unwrap();
 }
