@@ -34,21 +34,24 @@ fn handle_connection(mut stream: TcpStream) {
     // managing calls to the std::io::Read trait methods
     let buf_reader = BufReader::new(&mut stream);
 
-    // Collect lines of request the browser sends to the server
-    let http_request: Vec<_> = buf_reader
-        .lines() // returns iterator of Result<String, std::io::Error>
-        .map(|result| result.unwrap()) // for simplicity, stops if error
-        .take_while(|line| !line.is_empty()) // ends HTTP request with two newlines in a row
-        .collect();
+    // Read first line of HTTP request
+    // Call next() to get first item from iterator
+    // First unwrap handles Option, stops if no items
+    // Second unwrap handles Result, stops if invalid request
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
 
-    let status_line = STATUS_LINE;
-    let contents = fs::read_to_string(MAIN_PAGE).unwrap();
-    let length = contents.len();
+    if request_line == "GET / HTTP/1.1" {
+        let status_line = STATUS_LINE;
+        let contents = fs::read_to_string(MAIN_PAGE).unwrap();
+        let length = contents.len();
 
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+        let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
 
-    // write_all() takes &[u8] & sends those bytes directly down
-    // the connection
-    // write_all() can fail, so using unwrap() for simplicity.
-    stream.write_all(response.as_bytes()).unwrap();
+        // write_all() takes &[u8] & sends those bytes directly down
+        // the connection
+        // write_all() can fail, so using unwrap() for simplicity.
+        stream.write_all(response.as_bytes()).unwrap();
+    } else {
+        // some other request
+    }
 }
