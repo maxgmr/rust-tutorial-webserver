@@ -6,14 +6,16 @@ use std::{
     time::Duration,
 };
 
-const STATUS_LINE_200: &'static str = "HTTP/1.1 200 OK";
-const STATUS_LINE_404: &'static str = "HTTP/1.1 404 NOT FOUND";
+const STATUS_LINE_200: &str = "HTTP/1.1 200 OK";
+const STATUS_LINE_404: &str = "HTTP/1.1 404 NOT FOUND";
 
-const MAIN_PAGE: &'static str = "welcome.html";
-const PAGE_404: &'static str = "404.html";
+const MAIN_PAGE: &str = "welcome.html";
+const PAGE_404: &str = "404.html";
 
-const REQUEST_LINE_MAIN: &'static str = "GET / HTTP/1.1";
-const REQUEST_LINE_SLEEP: &'static str = "GET /sleep HTTP/1.1";
+const REQUEST_LINE_MAIN: &str = "GET / HTTP/1.1";
+const REQUEST_LINE_SLEEP: &str = "GET /sleep HTTP/1.1";
+
+const THREAD_POOL_SIZE: u8 = 4;
 
 fn main() {
     // Listen at local address '127.0.0.1:7878' for incoming
