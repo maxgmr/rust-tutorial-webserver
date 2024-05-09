@@ -2,7 +2,11 @@
 
 #![warn(missing_docs)]
 
-use std::{fmt, thread};
+use std::{
+    fmt,
+    sync::{mpsc, Arc, Mutex},
+    thread,
+};
 
 /// An error thrown when an invalid size is given during creation of a new ThreadPool
 #[derive(Debug)]
@@ -22,6 +26,7 @@ impl fmt::Display for PoolCreationError {
 /// A list of worker threads.
 pub struct ThreadPool {
     workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>,
 }
 impl ThreadPool {
     /// Create a new ThreadPool.
@@ -40,9 +45,7 @@ impl ThreadPool {
     /// ```
     pub fn new(size: usize) -> ThreadPool {
         assert!(size > 0);
-        ThreadPool {
-            workers: Self::gen_thread_list(size),
-        }
+        Self::gen_thread_pool(size)
     }
 
     /// Create a new ThreadPool.
@@ -67,24 +70,29 @@ impl ThreadPool {
     /// ```
     pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
         if size > 0 {
-            Ok(ThreadPool {
-                workers: Self::gen_thread_list(size),
-            })
+            Ok(Self::gen_thread_pool(size))
         } else {
             Err(PoolCreationError { given_size: size })
         }
     }
 
-    fn gen_thread_list(size: usize) -> Vec<Worker> {
+    fn gen_thread_pool(size: usize) -> ThreadPool {
+        let (sender, receiver) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(receiver));
+
         // Preallocating vector space is more efficient than Vec::new
         let mut workers = Vec::with_capacity(size);
 
         for n in 0..size {
             // Create some threads and store them in the vector.
-            workers.push(Worker::new(n));
+            // Arc type allows multiple workers to own the
+            // receiver
+            // Mutex ensures only one worker gets a job from
+            // the receiver at a time
+            workers.push(Worker::new(n, Arc::clone(&receiver)));
         }
 
-        workers
+        ThreadPool { workers, sender }
     }
 
     /// Select a worker and execute a given closure.
@@ -100,8 +108,16 @@ impl ThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
+        // Create new Job instance using the provided closure
+        // and send that job down the sending end of the channel.
+        // unwrap is used because failure case won't happen.
+        self.sender.send(Box::new(f)).unwrap();
     }
 }
+
+// Type alias for a trait object that holds the type of closure
+// that execute receives
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 /// A worker with a given id which can be assigned tasks to do
 struct Worker {
@@ -109,10 +125,27 @@ struct Worker {
     thread: thread::JoinHandle<()>,
 }
 impl Worker {
-    pub fn new(id: usize) -> Worker {
+    pub fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         Worker {
             id,
-            thread: thread::spawn(|| {}),
+            // Closure loops forever, asking receiving end of
+            // channel for a job and running the job when it
+            // gets one.
+            thread: thread::spawn(move || loop {
+                // Call lock() on receiver to acquire mutex
+                // Call unwrap() to panic on any errors, such
+                // as poisoned mutex state wherein another
+                // thread panics whilst holding the lock.
+                // Call recv() to receive a Job from the channel.
+                // recv() call blocks, so will wait for next job.
+                // Mutex<T> ensures only one Worker thread at a
+                // time is trying to request a job.
+                // Call unwrap() to panic on any errors, such as
+                // if the thread holding the sender shuts down.
+                let job = receiver.lock().unwrap().recv().unwrap();
+                println!("Worker {id} got job; executing.");
+                job();
+            }),
         }
     }
 }
