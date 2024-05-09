@@ -2,12 +2,18 @@ use std::{
     fs,
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream},
+    thread,
+    time::Duration,
 };
 
 const STATUS_LINE_200: &'static str = "HTTP/1.1 200 OK";
 const STATUS_LINE_404: &'static str = "HTTP/1.1 404 NOT FOUND";
+
 const MAIN_PAGE: &'static str = "welcome.html";
 const PAGE_404: &'static str = "404.html";
+
+const REQUEST_LINE_MAIN: &'static str = "GET / HTTP/1.1";
+const REQUEST_LINE_SLEEP: &'static str = "GET /sleep HTTP/1.1";
 
 fn main() {
     // Listen at local address '127.0.0.1:7878' for incoming
@@ -42,10 +48,14 @@ fn handle_connection(mut stream: TcpStream) {
     // Second unwrap handles Result, stops if invalid request
     let request_line = buf_reader.lines().next().unwrap().unwrap();
 
-    let (status_line, filename) = if request_line == "GET / HTTP/1.1" {
-        (STATUS_LINE_200, MAIN_PAGE)
-    } else {
-        (STATUS_LINE_404, PAGE_404)
+    let (status_line, filename) = match &request_line[..] {
+        REQUEST_LINE_MAIN => (STATUS_LINE_200, MAIN_PAGE),
+        // Simulated slow response
+        REQUEST_LINE_SLEEP => {
+            thread::sleep(Duration::from_secs(5));
+            (STATUS_LINE_200, MAIN_PAGE)
+        }
+        _ => (STATUS_LINE_404, PAGE_404),
     };
 
     let contents = fs::read_to_string(filename).unwrap();
