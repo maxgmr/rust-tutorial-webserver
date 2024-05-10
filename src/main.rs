@@ -19,6 +19,8 @@ const REQUEST_LINE_SLEEP: &str = "GET /sleep HTTP/1.1";
 
 const THREAD_POOL_SIZE: usize = 4;
 
+const REQS_BEFORE_SHUTDOWN: usize = 16;
+
 fn main() {
     // Listen at local address '127.0.0.1:7878' for incoming
     // TCP streams
@@ -40,13 +42,14 @@ fn main() {
 
     // Process each connection & produce a series of streams
     // to handle
-    for stream in listener.incoming() {
+    for stream in listener.incoming().take(REQS_BEFORE_SHUTDOWN) {
         let stream = stream.unwrap();
 
         // pool.execute takes a closure and gives it to a thread
         // in the pool to run
         t_pool.execute(|| handle_connection(stream));
     }
+    println!("{REQS_BEFORE_SHUTDOWN} requests received. Shutting down.");
 }
 
 fn handle_connection(mut stream: TcpStream) {
@@ -80,4 +83,5 @@ fn handle_connection(mut stream: TcpStream) {
     // the connection
     // write_all() can fail, so using unwrap() for simplicity.
     stream.write_all(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
 }

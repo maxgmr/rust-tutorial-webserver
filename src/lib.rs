@@ -26,7 +26,7 @@ impl fmt::Display for PoolCreationError {
 /// A list of worker threads.
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 impl ThreadPool {
     /// Create a new ThreadPool.
@@ -92,7 +92,10 @@ impl ThreadPool {
             workers.push(Worker::new(n, Arc::clone(&receiver)));
         }
 
-        ThreadPool { workers, sender }
+        ThreadPool {
+            workers,
+            sender: Some(sender),
+        }
     }
 
     /// Select a worker and execute a given closure.
@@ -111,7 +114,21 @@ impl ThreadPool {
         // Create new Job instance using the provided closure
         // and send that job down the sending end of the channel.
         // unwrap is used because failure case won't happen.
-        self.sender.send(Box::new(f)).unwrap();
+        let job = Box::new(f);
+        self.sender.as_ref().unwrap().send(job).unwrap();
+    }
+}
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+        }
     }
 }
 
@@ -122,30 +139,37 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 /// A worker with a given id which can be assigned tasks to do
 struct Worker {
     id: usize,
-    thread: thread::JoinHandle<()>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 impl Worker {
     pub fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        // Closure loops forever, asking receiving end of
+        // channel for a job and running the job when it
+        // gets one.
+        let thread = thread::spawn(move || loop {
+            // Call lock() on receiver to acquire mutex
+            // Call unwrap() to panic on any errors, such
+            // as poisoned mutex state wherein another
+            // thread panics whilst holding the lock.
+            // Call recv() to receive a Job from the channel.
+            // recv() call blocks, so will wait for next job.
+            // Mutex<T> ensures only one Worker thread at a
+            // time is trying to request a job.
+            let message = receiver.lock().unwrap().recv();
+            match message {
+                Ok(job) => {
+                    println!("Worker {id} got job; executing.");
+                    job();
+                }
+                Err(_) => {
+                    println!("Worker {id} disconnected; shutting down.");
+                    break;
+                }
+            }
+        });
         Worker {
             id,
-            // Closure loops forever, asking receiving end of
-            // channel for a job and running the job when it
-            // gets one.
-            thread: thread::spawn(move || loop {
-                // Call lock() on receiver to acquire mutex
-                // Call unwrap() to panic on any errors, such
-                // as poisoned mutex state wherein another
-                // thread panics whilst holding the lock.
-                // Call recv() to receive a Job from the channel.
-                // recv() call blocks, so will wait for next job.
-                // Mutex<T> ensures only one Worker thread at a
-                // time is trying to request a job.
-                // Call unwrap() to panic on any errors, such as
-                // if the thread holding the sender shuts down.
-                let job = receiver.lock().unwrap().recv().unwrap();
-                println!("Worker {id} got job; executing.");
-                job();
-            }),
+            thread: Some(thread),
         }
     }
 }
